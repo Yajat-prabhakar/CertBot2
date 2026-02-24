@@ -9,7 +9,8 @@ import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
  */
 export async function generateCertificate(templateBuffer, participantName, config) {
   try {
-    console.log(`[PDF] Generating certificate for: ${participantName}`);
+    const name = participantName.toUpperCase();
+    console.log(`[PDF] Generating certificate for: ${name}`);
 
     // Load the PDF template
     const pdfDoc = await PDFDocument.load(templateBuffer);
@@ -32,10 +33,21 @@ export async function generateCertificate(templateBuffer, participantName, confi
     console.log(`[PDF] Page size: ${width}x${height}`);
 
     // Draw participant name
-    firstPage.drawText(participantName, {
-      x: config.name_x || 300,
-      y: config.name_y || 400,
-      size: config.font_size || 24,
+    const fontSize = config.font_size || 24;
+    const textWidth = font.widthOfTextAtSize(name, fontSize);
+
+    // Calculate X coordinate based on alignment
+    let nameX = config.name_x || 300;
+    if (config.text_alignment === 'center') {
+      nameX = (width / 2) - (textWidth / 2);
+    }
+
+    const nameY = config.name_y || config.text_y_position || 300;
+
+    firstPage.drawText(name, {
+      x: nameX,
+      y: nameY,
+      size: fontSize,
       font: font,
       color: rgb(0, 0, 0),
     });
@@ -47,11 +59,20 @@ export async function generateCertificate(templateBuffer, participantName, confi
       day: 'numeric'
     });
 
+    const dateFontSize = 12;
+    const dateFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const dateWidth = dateFont.widthOfTextAtSize(currentDate, dateFontSize);
+
+    let dateX = nameX; // Default to same as name
+    if (config.text_alignment === 'center') {
+      dateX = (width / 2) - (dateWidth / 2);
+    }
+
     firstPage.drawText(currentDate, {
-      x: config.name_x || 300,
-      y: (config.name_y || 400) - 40,
-      size: 12,
-      font: await pdfDoc.embedFont(StandardFonts.Helvetica),
+      x: dateX,
+      y: nameY - 60,
+      size: dateFontSize,
+      font: dateFont,
       color: rgb(0.4, 0.4, 0.4),
     });
 

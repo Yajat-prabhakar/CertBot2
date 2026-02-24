@@ -3,12 +3,12 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 
-import { 
-  getEventByName, 
-  getParticipant, 
-  createParticipant, 
+import {
+  getEventByName,
+  getParticipant,
+  createParticipant,
   updateParticipant,
-  markCertificateSent 
+  markCertificateSent
 } from './lib/supabase.js';
 import { getTemplateFile } from './tools/google-drive.tool.js';
 import { generateCertificate } from './tools/pdf-generator.tool.js';
@@ -49,8 +49,8 @@ app.use((req, res, next) => {
  * Health check endpoint (for cron job keep-alive)
  */
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   });
@@ -61,14 +61,14 @@ app.get('/health', (req, res) => {
  */
 app.post('/webhook', async (req, res) => {
   const startTime = Date.now();
-  
+
   try {
     const { name, email, event, rating, feedback, enjoyed_most, suggestions } = req.body;
 
     // Validate required fields
     if (!name || !email || !event) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: name, email, event' 
+      return res.status(400).json({
+        error: 'Missing required fields: name, email, event'
       });
     }
 
@@ -108,23 +108,12 @@ app.post('/webhook', async (req, res) => {
 
       participantId = updated.id;
     } else {
-      // Create new participant
-      console.log(`[Workflow] Creating new participant: ${email}`);
-
-      const newParticipant = await createParticipant({
-        name,
-        email,
-        event_id: eventData.id,
-        feedback_submitted: true,
-        feedback_submitted_at: new Date().toISOString(),
-        certificate_sent: false,
-        rating,
-        feedback_text: feedback,
-        enjoyed_most,
-        suggestions
+      // Reject non-attendees
+      console.log(`[Workflow] Rejecting non-attendee: ${email}`);
+      return res.status(403).json({
+        error: 'Registration Required',
+        message: 'You were not registered for this event. Feedback submission is restricted to attendees only.'
       });
-
-      participantId = newParticipant.id;
     }
 
     // Step 3: Download template from Google Drive
@@ -137,7 +126,9 @@ app.post('/webhook', async (req, res) => {
       name_x: eventData.name_x,
       name_y: eventData.name_y,
       font_size: eventData.font_size,
-      font_style: eventData.font_style
+      font_style: eventData.font_style,
+      text_alignment: eventData.text_alignment,
+      text_y_position: eventData.text_y_position
     });
 
     // Step 5: Send via AgentMail
@@ -197,28 +188,28 @@ app.get('/test-db', async (req, res) => {
 
     if (error) throw error;
 
-    res.json({ 
-      status: 'connected', 
+    res.json({
+      status: 'connected',
       events_found: data?.length || 0,
       sample: data?.[0] || null
     });
   } catch (error) {
-    res.status(500).json({ 
-      status: 'error', 
-      message: error.message 
+    res.status(500).json({
+      status: 'error',
+      message: error.message
     });
   }
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(JSON.stringify({ 
-    level: 'ERROR', 
-    error: err.message, 
-    stack: err.stack 
+  console.error(JSON.stringify({
+    level: 'ERROR',
+    error: err.message,
+    stack: err.stack
   }));
-  
-  res.status(500).json({ 
+
+  res.status(500).json({
     error: 'Internal server error',
     message: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
