@@ -1,88 +1,169 @@
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 
-/**
- * Generate personalized certificate by stamping name on template
- * @param {Buffer} templateBuffer - PDF template as buffer
- * @param {string} participantName - Name to stamp on certificate
- * @param {Object} config - Configuration (nameX, nameY, fontSize, fontStyle)
- * @returns {Promise<Buffer>} - Modified PDF as buffer
- */
-export async function generateCertificate(templateBuffer, participantName, config) {
-  try {
-    const name = participantName.toUpperCase();
-    console.log(`[PDF] Generating certificate for: ${name}`);
+import { ConfigError } from '../lib/errors.js';
+import { logError, logInfo, serializeError } from '../lib/logger.js';
 
-    // Load the PDF template
-    const pdfDoc = await PDFDocument.load(templateBuffer);
+function clampColorChannel(value) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function normalizeColorValue(value) {
+  return clampColorChannel(value > 1 ? value / 255 : value);
+}
+
+function parseHexColor(hexColor) {
+  const normalized = hexColor.replace('#', '').trim();
+  if (![3, 6].includes(normalized.length)) {
+    throw new Error('Hex color must have 3 or 6 characters');
+  }
+
+  const expanded = normalized.length === 3
+    ? normalized.split('').map((char) => `${char}${char}`).join('')
+    : normalized;
+
+  const red = Number.parseInt(expanded.slice(0, 2), 16) / 255;
+  const green = Number.parseInt(expanded.slice(2, 4), 16) / 255;
+  const blue = Number.parseInt(expanded.slice(4, 6), 16) / 255;
+
+  if ([red, green, blue].some(Number.isNaN)) {
+    throw new Error('Invalid hex color');
+  }
+
+  return rgb(red, green, blue);
+}
+
+function resolveTextColor(colorValue) {
+  if (!colorValue) {
+    return rgb(0, 0, 0);
+  }
+
+  try {
+    if (typeof colorValue === 'string') {
+      return parseHexColor(colorValue);
+    }
+
+    if (typeof colorValue === 'object') {
+      const red = normalizeColorValue(colorValue.r ?? colorValue.red ?? 0);
+      const green = normalizeColorValue(colorValue.g ?? colorValue.green ?? 0);
+      const blue = normalizeColorValue(colorValue.b ?? colorValue.blue ?? 0);
+      return rgb(red, green, blue);
+    }
+  } catch (error) {
+    throw new ConfigError('Certificate text color is invalid', {
+      code: 'TEMPLATE_COLOR_INVALID',
+      cause: error,
+    });
+  }
+
+  throw new ConfigError('Certificate text color is invalid', {
+    code: 'TEMPLATE_COLOR_INVALID',
+  });
+}
+
+function getDateYPosition(nameY, fontSize) {
+  const verticalGap = Math.max(fontSize * 1.6, 32);
+  return nameY - verticalGap;
+}
+
+export async function generateCertificate(templateBuffer, participantName, config = {}, options = {}) {
+  const { requestId } = options;
+  const name = String(participantName).trim().toUpperCase();
+
+  try {
+    if (!templateBuffer || templateBuffer.length === 0) {
+      throw new ConfigError('Certificate template is empty or missing', {
+        code: 'TEMPLATE_BUFFER_INVALID',
+      });
+    }
+
+    let pdfDoc;
+    try {
+      pdfDoc = await PDFDocument.load(templateBuffer);
+    } catch (error) {
+      throw new ConfigError('Certificate template is not a valid PDF document', {
+        code: 'TEMPLATE_PDF_INVALID',
+        cause: error,
+      });
+    }
+
     const pages = pdfDoc.getPages();
     const firstPage = pages[0];
 
-    // Embed font
+    if (!firstPage) {
+      throw new ConfigError('Certificate template does not contain any pages', {
+        code: 'TEMPLATE_PDF_EMPTY',
+      });
+    }
+
     const fontMap = {
-      'Helvetica': StandardFonts.Helvetica,
+      Helvetica: StandardFonts.Helvetica,
       'Helvetica-Bold': StandardFonts.HelveticaBold,
       'Times-Roman': StandardFonts.TimesRoman,
       'Times-Bold': StandardFonts.TimesRomanBold,
     };
 
     const fontKey = config.font_style || 'Helvetica-Bold';
+    const fontSize = Number(config.font_size) || 24;
     const font = await pdfDoc.embedFont(fontMap[fontKey] || StandardFonts.HelveticaBold);
+    const dateFontSize = Math.max(Math.round(fontSize * 0.5), 12);
+    const dateFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const textColor = resolveTextColor(config.text_color || config.font_color);
 
-    // Get page dimensions for reference
     const { width, height } = firstPage.getSize();
-    console.log(`[PDF] Page size: ${width}x${height}`);
-
-    // Draw participant name
-    const fontSize = config.font_size || 24;
     const textWidth = font.widthOfTextAtSize(name, fontSize);
 
-    // Calculate X coordinate based on alignment
-    let nameX = config.name_x || 300;
+    let nameX = Number(config.name_x) || 300;
     if (config.text_alignment === 'center') {
       nameX = (width / 2) - (textWidth / 2);
     }
 
-    const nameY = config.name_y || config.text_y_position || 300;
+    const nameY = Number(config.name_y || config.text_y_position) || 300;
 
     firstPage.drawText(name, {
       x: nameX,
       y: nameY,
       size: fontSize,
-      font: font,
-      color: rgb(0, 0, 0),
+      font,
+      color: textColor,
     });
 
-    // Draw current date below name
     const currentDate = new Date().toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
-      day: 'numeric'
+      day: 'numeric',
     });
 
-    const dateFontSize = 12;
-    const dateFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const dateWidth = dateFont.widthOfTextAtSize(currentDate, dateFontSize);
-
-    let dateX = nameX; // Default to same as name
+    let dateX = nameX;
     if (config.text_alignment === 'center') {
       dateX = (width / 2) - (dateWidth / 2);
     }
 
     firstPage.drawText(currentDate, {
       x: dateX,
-      y: nameY - 60,
+      y: getDateYPosition(nameY, fontSize),
       size: dateFontSize,
       font: dateFont,
-      color: rgb(0.4, 0.4, 0.4),
+      color: resolveTextColor(config.date_color || config.text_color || config.font_color),
     });
 
-    // Save PDF
     const pdfBytes = await pdfDoc.save();
-    console.log(`[PDF] Certificate generated (${pdfBytes.length} bytes)`);
+
+    logInfo('PDFGenerator', 'CertificateGenerated', {
+      participantName: name,
+      fontKey,
+      fontSize,
+      pageWidth: width,
+      pageHeight: height,
+      outputBytes: pdfBytes.length,
+    }, requestId);
 
     return Buffer.from(pdfBytes);
   } catch (error) {
-    console.error('[PDF] Error generating certificate:', error.message);
+    logError('PDFGenerator', 'CertificateGenerationFailed', {
+      participantName: name,
+      error: serializeError(error),
+    }, requestId);
     throw error;
   }
 }
