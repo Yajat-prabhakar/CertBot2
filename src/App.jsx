@@ -1,21 +1,42 @@
 import { useEffect, useState } from 'react';
 import FeedbackForm from './components/FeedbackForm';
 
+function getUrlErrorState() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const rawEvent = urlParams.get('event');
+
+  if (rawEvent === null) {
+    return {
+      title: 'Missing Event Link',
+      message: 'This feedback URL is missing the event parameter. Please use the complete link provided by your event organizer.',
+    };
+  }
+
+  const normalizedEvent = rawEvent.trim();
+  if (!normalizedEvent) {
+    return {
+      title: 'Invalid Event Link',
+      message: 'This feedback URL includes an empty event value. Please request a new link from your event organizer.',
+    };
+  }
+
+  return null;
+}
+
 function App() {
   const [eventName, setEventName] = useState('');
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    // Get event name from URL parameter
+    const urlError = getUrlErrorState();
+    if (urlError) {
+      setError(urlError);
+      return;
+    }
+
     const urlParams = new URLSearchParams(window.location.search);
     const event = urlParams.get('event');
-
-    if (!event) {
-      setError('Invalid event URL. Please use the correct link provided by your event organizer.');
-    } else {
-      // Decode URL-encoded event name
-      setEventName(decodeURIComponent(event));
-    }
+    setEventName(event.trim());
   }, []);
 
   if (error) {
@@ -27,8 +48,8 @@ function App() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Invalid Event Link</h2>
-          <p className="text-gray-600">{error}</p>
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">{error.title}</h2>
+          <p className="text-gray-600">{error.message}</p>
           <p className="text-sm text-gray-500 mt-4">
             Please contact your event organizer for the correct feedback form link.
           </p>
@@ -40,7 +61,10 @@ function App() {
   if (!eventName) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+          <p className="text-sm font-medium text-gray-600">Loading event...</p>
+        </div>
       </div>
     );
   }

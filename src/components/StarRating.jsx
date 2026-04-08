@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-export default function StarRating({ value, onChange, error }) {
+export default function StarRating({ value, onChange, error, disabled = false }) {
   const [hoverRating, setHoverRating] = useState(0);
 
   return (
@@ -14,10 +14,11 @@ export default function StarRating({ value, onChange, error }) {
             key={star}
             type="button"
             onClick={() => onChange(star)}
-            onMouseEnter={() => setHoverRating(star)}
-            onMouseLeave={() => setHoverRating(0)}
-            className="text-4xl transition-all duration-200 transform hover:scale-125 focus:outline-none"
+            onMouseEnter={() => !disabled && setHoverRating(star)}
+            onMouseLeave={() => !disabled && setHoverRating(0)}
+            className={`text-4xl transition-all duration-200 focus:outline-none ${disabled ? 'cursor-not-allowed opacity-50' : 'transform hover:scale-125'}`}
             aria-label={`Rate ${star} star${star > 1 ? 's' : ''}`}
+            disabled={disabled}
           >
             {star <= (hoverRating || value) ? (
               <span className="text-yellow-400 drop-shadow-lg">⭐</span>

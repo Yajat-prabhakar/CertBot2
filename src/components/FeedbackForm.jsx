@@ -1,10 +1,28 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { feedbackSchema } from '../lib/validation';
-import { submitFeedback } from '../lib/api';
+import { ApiError, submitFeedback } from '../lib/api';
 import StarRating from './StarRating';
 import SuccessMessage from './SuccessMessage';
+
+function getSubmitErrorMessage(error) {
+  if (error instanceof ApiError) {
+    if (error.type === 'network') {
+      return error.message;
+    }
+
+    if (error.type === 'validation' || error.statusCode === 400 || error.statusCode === 403) {
+      return error.message || 'Please review your submission and try again.';
+    }
+
+    if (error.type === 'server' || error.statusCode >= 500) {
+      return error.message || 'The server could not complete your request. Please try again shortly.';
+    }
+  }
+
+  return error.message || 'Failed to submit feedback. Please try again.';
+}
 
 export default function FeedbackForm({ eventName }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -24,11 +42,23 @@ export default function FeedbackForm({ eventName }) {
     defaultValues: {
       event: eventName,
       rating: 0,
+      name: '',
+      email: '',
+      feedback: '',
+      enjoyed_most: '',
+      suggestions: '',
     },
   });
 
+  useEffect(() => {
+    setValue('event', eventName, { shouldValidate: false, shouldDirty: false });
+  }, [eventName, setValue]);
+
   const watchedRating = watch('rating');
   const watchedFeedback = watch('feedback', '');
+  const disabledFieldClassName = isSubmitting
+    ? 'input-field bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed'
+    : 'input-field';
 
   const onSubmit = async (data) => {
     setIsSubmitting(true);
@@ -39,7 +69,7 @@ export default function FeedbackForm({ eventName }) {
       setSubmittedEmail(data.email);
       setIsSuccess(true);
     } catch (error) {
-      setSubmitError(error.message || 'Failed to submit feedback. Please try again.');
+      setSubmitError(getSubmitErrorMessage(error));
     } finally {
       setIsSubmitting(false);
     }
@@ -48,7 +78,16 @@ export default function FeedbackForm({ eventName }) {
   const handleReset = () => {
     setIsSuccess(false);
     setSubmittedEmail('');
-    reset();
+    setSubmitError(null);
+    reset({
+      event: eventName,
+      rating: 0,
+      name: '',
+      email: '',
+      feedback: '',
+      enjoyed_most: '',
+      suggestions: '',
+    });
   };
 
   if (isSuccess) {
@@ -58,7 +97,6 @@ export default function FeedbackForm({ eventName }) {
   return (
     <div className="min-h-screen flex items-center justify-center p-4 py-12">
       <div className="bg-white rounded-2xl shadow-2xl p-8 md:p-12 max-w-3xl w-full">
-        {/* Header */}
         <div className="text-center mb-8 animate-fadeInUp">
           <div className="inline-block bg-indigo-100 text-indigo-800 px-4 py-1 rounded-full text-sm font-semibold mb-4">
             Event Feedback
@@ -71,7 +109,6 @@ export default function FeedbackForm({ eventName }) {
           </p>
         </div>
 
-        {/* Error Alert */}
         {submitError && (
           <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-6 rounded animate-fadeInUp">
             <div className="flex">
@@ -87,9 +124,9 @@ export default function FeedbackForm({ eventName }) {
           </div>
         )}
 
-        {/* Form */}
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          {/* Full Name */}
+          <input type="hidden" {...register('event')} />
+
           <div className="animate-fadeInUp animate-delay-100">
             <label htmlFor="name" className="label">
               Full Name <span className="text-red-500">*</span>
@@ -98,14 +135,14 @@ export default function FeedbackForm({ eventName }) {
               id="name"
               type="text"
               {...register('name')}
-              className="input-field"
+              className={disabledFieldClassName}
               placeholder="Enter your full name"
               disabled={isSubmitting}
+              aria-busy={isSubmitting}
             />
             {errors.name && <p className="error-text">{errors.name.message}</p>}
           </div>
 
-          {/* Email */}
           <div className="animate-fadeInUp animate-delay-200">
             <label htmlFor="email" className="label">
               Email Address <span className="text-red-500">*</span>
@@ -114,9 +151,10 @@ export default function FeedbackForm({ eventName }) {
               id="email"
               type="email"
               {...register('email')}
-              className="input-field"
+              className={disabledFieldClassName}
               placeholder="you@example.com"
               disabled={isSubmitting}
+              aria-busy={isSubmitting}
             />
             {errors.email && <p className="error-text">{errors.email.message}</p>}
             <p className="text-xs text-gray-500 mt-1">
@@ -124,16 +162,15 @@ export default function FeedbackForm({ eventName }) {
             </p>
           </div>
 
-          {/* Star Rating */}
           <div className="animate-fadeInUp animate-delay-300">
             <StarRating
               value={watchedRating}
               onChange={(value) => setValue('rating', value, { shouldValidate: true })}
               error={errors.rating?.message}
+              disabled={isSubmitting}
             />
           </div>
 
-          {/* Feedback */}
           <div className="animate-fadeInUp animate-delay-300">
             <label htmlFor="feedback" className="label">
               Your Feedback <span className="text-red-500">*</span>
@@ -142,9 +179,10 @@ export default function FeedbackForm({ eventName }) {
               id="feedback"
               {...register('feedback')}
               rows={4}
-              className="input-field resize-none"
+              className={`${disabledFieldClassName} resize-none`}
               placeholder="Share your experience with us..."
               disabled={isSubmitting}
+              aria-busy={isSubmitting}
             />
             <div className="flex justify-between items-center mt-1">
               {errors.feedback ? (
@@ -153,12 +191,11 @@ export default function FeedbackForm({ eventName }) {
                 <p className="text-xs text-gray-500">Minimum 10 characters</p>
               )}
               <p className="text-xs text-gray-500">
-                {watchedFeedback.length}/500
+                {watchedFeedback.length}/500 (min 10)
               </p>
             </div>
           </div>
 
-          {/* What did you enjoy most */}
           <div className="animate-fadeInUp animate-delay-300">
             <label htmlFor="enjoyed_most" className="label">
               What did you enjoy most? <span className="text-gray-400">(Optional)</span>
@@ -167,14 +204,14 @@ export default function FeedbackForm({ eventName }) {
               id="enjoyed_most"
               {...register('enjoyed_most')}
               rows={3}
-              className="input-field resize-none"
+              className={`${disabledFieldClassName} resize-none`}
               placeholder="Tell us what you liked..."
               disabled={isSubmitting}
+              aria-busy={isSubmitting}
             />
             {errors.enjoyed_most && <p className="error-text">{errors.enjoyed_most.message}</p>}
           </div>
 
-          {/* Suggestions */}
           <div className="animate-fadeInUp animate-delay-300">
             <label htmlFor="suggestions" className="label">
               Suggestions for improvement <span className="text-gray-400">(Optional)</span>
@@ -183,14 +220,14 @@ export default function FeedbackForm({ eventName }) {
               id="suggestions"
               {...register('suggestions')}
               rows={3}
-              className="input-field resize-none"
+              className={`${disabledFieldClassName} resize-none`}
               placeholder="How can we improve?"
               disabled={isSubmitting}
+              aria-busy={isSubmitting}
             />
             {errors.suggestions && <p className="error-text">{errors.suggestions.message}</p>}
           </div>
 
-          {/* Submit Button */}
           <div className="pt-4 animate-fadeInUp animate-delay-300">
             <button
               type="submit"

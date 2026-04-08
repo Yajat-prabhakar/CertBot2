@@ -15,7 +15,7 @@
   }
 
   .input-field {
-    @apply w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all duration-200;
+    @apply w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all duration-200 disabled:bg-gray-100 disabled:text-gray-500 disabled:border-gray-200 disabled:cursor-not-allowed;
   }
 
   .label {
@@ -27,7 +27,6 @@
   }
 }
 
-/* Custom animations */
 @keyframes fadeInUp {
   from {
     opacity: 0;
